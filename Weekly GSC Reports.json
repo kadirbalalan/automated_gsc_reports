@@ -1,0 +1,262 @@
+{
+  "name": "Weekly GSC Reports",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "decfc979-4ffd-4468-ada5-390744024764",
+      "name": "Weekly Trigger (Monday 7AM)",
+      "type": "n8n-nodes-base.cron",
+      "position": [
+        -944,
+        -80
+      ],
+      "typeVersion": 1
+    },
+    {
+      "parameters": {
+        "functionCode": "// ============================================================================\n//  GROWTH ENGINE SEO REPORT (V4 - FUTURISTIC DESIGN)\n//  Filters: No Homepage, No Brand Queries, No Assets (wp-content)\n// ============================================================================\n\n// --- 1. SETTINGS & FILTERS ---\n\n// A. Manual Whitelist (Specific Pages to Track)\n// Replace these regex patterns with your own important URLs\nconst URL_WHITELIST = [\n    \n];\n\n// B. FILTER CONFIGURATION (Cleaning Rules)\nconst FILTER_CONFIG = {\n    // Queries containing these terms will be excluded (e.g. brand name)\n    ignoreQueryTerms: ['your_brand'], \n    // Paths matching these patterns will be excluded\n    ignorePathPatterns: [/\\/wp-content/i, /\\/admin/i, /\\/login/i],\n    // If true, the homepage will be excluded from the report\n    ignoreHomepage: true\n};\n\n// --- 2. DATA COLLECTION ---\nlet currentRows = [];\nlet prevRows = [];\nlet queryRows = [];\n\n// Ensure these Node names match your n8n workflow exactly\ntry { currentRows = $('GSC Page Data - Current').all()[0].json.rows || []; } catch(e) {}\ntry { prevRows = $('GSC Page Data - Previous').all()[0].json.rows || []; } catch(e) {}\ntry { queryRows = $('GSC Query Data').all()[0].json.rows || []; } catch(e) { console.log(\"No query data found.\"); }\n\n// --- 3. FILTERING ENGINE ---\n\nfunction shouldSkipPage(url) {\n    if (!url) return true;\n    \n    // Domain Cleaner for Homepage Check\n    // REPLACE 'yourdomain.com' WITH YOUR ACTUAL DOMAIN\n    if (FILTER_CONFIG.ignoreHomepage) {\n        const clean = url.replace('https://yourdomain.com', '').replace('http://yourdomain.com', '');\n        if (clean === '' || clean === '/') return true;\n    }\n\n    for (const pattern of FILTER_CONFIG.ignorePathPatterns) {\n        if (pattern.test(url)) return true;\n    }\n\n    return false;\n}\n\nfunction shouldSkipQuery(query) {\n    if (!query) return true;\n    const qLower = query.toLowerCase();\n\n    for (const term of FILTER_CONFIG.ignoreQueryTerms) {\n        if (qLower.includes(term)) return true;\n    }\n    \n    return false;\n}\n\n\n// --- 4. ANALYSIS ENGINE ---\n\nconst metricsMap = new Map();\n\n// Process Current Data\ncurrentRows.forEach(row => {\n    const url = row.keys[0];\n    if (shouldSkipPage(url)) return;\n\n    metricsMap.set(url, {\n        url: url,\n        clicks_now: row.clicks,\n        impr_now: row.impressions,\n        pos_now: row.position,\n        clicks_prev: 0,\n        pos_prev: 0,\n        delta: 0,\n        pos_delta: 0\n    });\n});\n\n// Process Previous Data & Calculate Deltas\nprevRows.forEach(row => {\n    const url = row.keys[0];\n    if (shouldSkipPage(url)) return;\n\n    if (metricsMap.has(url)) {\n        const entry = metricsMap.get(url);\n        entry.clicks_prev = row.clicks;\n        entry.pos_prev = row.position;\n    } else {\n        metricsMap.set(url, {\n            url: url,\n            clicks_now: 0,\n            impr_now: 0,\n            pos_now: 0,\n            clicks_prev: row.clicks,\n            pos_prev: row.position,\n            delta: 0,\n            pos_delta: 0\n        });\n    }\n});\n\nmetricsMap.forEach(entry => {\n    entry.delta = entry.clicks_now - entry.clicks_prev;\n    if(entry.pos_prev > 0 && entry.pos_now > 0) {\n        entry.pos_delta = entry.pos_now - entry.pos_prev;\n    }\n});\n\nconst allPages = Array.from(metricsMap.values());\n\n// Process Query Data\nconst queryMetrics = [];\nqueryRows.forEach(row => {\n    const page = row.keys[0];\n    const query = row.keys[1];\n\n    if (shouldSkipPage(page)) return;\n    if (shouldSkipQuery(query)) return;\n\n    queryMetrics.push({\n        query: query,\n        page: page,\n        clicks: row.clicks,\n        imp: row.impressions,\n        pos: row.position\n    });\n});\n\n\n// --- 5. REPORT LISTS ---\n\nfunction isWhitelisted(url) {\n    return URL_WHITELIST.some(pattern => pattern.test(url));\n}\n\n// 1. Watchlist (Whitelisted Pages)\nconst watchlist = allPages\n    .filter(p => isWhitelisted(p.url))\n    .sort((a, b) => b.clicks_now - a.clicks_now);\n\n// 2. Risers (Top Gainers)\nconst risers = [...allPages]\n    .sort((a, b) => b.delta - a.delta)\n    .slice(0, 5);\n\n// 3. Fallers (Top Losers)\nconst fallers = [...allPages]\n    .sort((a, b) => a.delta - b.delta)\n    .slice(0, 5);\n\n// 4. Content Decay (Losing Traffic & Rank)\nconst decay = allPages\n    .filter(p => p.delta < -1 && p.pos_delta >= 0)\n    .sort((a, b) => a.delta - b.delta)\n    .slice(0, 5);\n\n// 5. Opportunities (High Impression, Low Rank)\nconst opportunities = queryMetrics\n    .filter(q => q.pos > 10 && q.pos <= 20 && q.imp > 50)\n    .sort((a, b) => b.imp - a.imp)\n    .slice(0, 5);\n\n// 6. Cannibalization (Pages fighting for same keyword)\nconst cannibalMap = {};\nqueryMetrics.forEach(q => {\n    if (q.imp > 30) {\n        if (!cannibalMap[q.query]) cannibalMap[q.query] = [];\n        cannibalMap[q.query].push(q);\n    }\n});\nconst cannibalIssues = [];\nfor (const [query, items] of Object.entries(cannibalMap)) {\n    if (items.length > 1) {\n        items.sort((a,b) => b.imp - a.imp);\n        cannibalIssues.push({\n            query: query,\n            pages: items.slice(0, 2),\n            totalImp: items.reduce((sum, i) => sum + i.imp, 0)\n        });\n    }\n}\ncannibalIssues.sort((a, b) => b.totalImp - a.totalImp).splice(5);\n\n\n// --- 6. FUTURISTIC HTML DESIGN ---\n\nconst cleanUrl = (u) => {\n    if (!u) return '/';\n    // REPLACE 'yourdomain.com' WITH YOUR ACTUAL DOMAIN\n    let cleaned = u.replace('https://yourdomain.com', '').replace('http://yourdomain.com', '');\n    if (cleaned.length > 1 && cleaned.endsWith('/')) cleaned = cleaned.slice(0, -1);\n    return (cleaned === '' || cleaned === '/') ? '/ (Homepage)' : cleaned;\n};\nconst fmt = (n) => n.toString().replace(/\\B(?=(\\d{3})+(?!\\d))/g, \",\");\n\nfunction createTable(title, rows, cols, rowMapper, emoji, gradientColor) {\n    if (!rows || rows.length === 0) {\n        return `\n        <div style=\"background: linear-gradient(135deg, rgba(255,255,255,0.1) 0%, rgba(255,255,255,0.05) 100%); \n                    border: 1px solid rgba(255,255,255,0.1); border-radius: 16px; padding: 24px; margin-bottom: 24px;\n                    backdrop-filter: blur(10px);\">\n            <div style=\"display: flex; align-items: center; margin-bottom: 16px;\">\n                <span style=\"font-size: 32px; margin-right: 12px;\">${emoji}</span>\n                <h3 style=\"margin: 0; color: #fff; font-size: 20px; font-weight: 600;\">${title}</h3>\n            </div>\n            <p style=\"color: rgba(255,255,255,0.6); font-size: 14px; font-style: italic; margin: 0;\">\n                No significant data found.\n            </p>\n        </div>`;\n    }\n    \n    return `\n    <div style=\"background: linear-gradient(135deg, ${gradientColor} 0%, rgba(255,255,255,0.05) 100%); \n                border: 1px solid rgba(255,255,255,0.15); border-radius: 16px; padding: 24px; margin-bottom: 24px;\n                backdrop-filter: blur(10px); box-shadow: 0 8px 32px rgba(0,0,0,0.2);\">\n        <div style=\"display: flex; align-items: center; margin-bottom: 20px;\">\n            <span style=\"font-size: 32px; margin-right: 12px;\">${emoji}</span>\n            <h3 style=\"margin: 0; color: #fff; font-size: 20px; font-weight: 600; letter-spacing: 0.5px;\">${title}</h3>\n        </div>\n        <div style=\"overflow-x: auto;\">\n            <table cellpadding=\"0\" cellspacing=\"0\" style=\"width: 100%; border-collapse: separate; border-spacing: 0;\">\n                <thead>\n                    <tr style=\"background: rgba(255,255,255,0.1);\">\n                        ${cols.map((c, i) => `\n                            <th style=\"padding: 14px 16px; text-align: left; color: rgba(255,255,255,0.9); \n                                     font-size: 12px; font-weight: 600; text-transform: uppercase; \n                                     letter-spacing: 1px; border-bottom: 2px solid rgba(255,255,255,0.2);\n                                     ${i === 0 ? 'border-radius: 8px 0 0 0;' : ''}\n                                     ${i === cols.length - 1 ? 'border-radius: 0 8px 0 0;' : ''}\">\n                                ${c}\n                            </th>\n                        `).join('')}\n                    </tr>\n                </thead>\n                <tbody>\n                    ${rows.map((r, idx) => `\n                        <tr style=\"background: ${idx % 2 === 0 ? 'rgba(255,255,255,0.05)' : 'rgba(255,255,255,0.02)'}; \n                                   transition: all 0.3s ease;\">\n                            ${rowMapper(r)}\n                        </tr>\n                    `).join('')}\n                </tbody>\n            </table>\n        </div>\n    </div>`;\n}\n\n// Stats cards for key metrics\nconst totalClicksNow = allPages.reduce((sum, p) => sum + p.clicks_now, 0);\nconst totalClicksPrev = allPages.reduce((sum, p) => sum + p.clicks_prev, 0);\nconst totalDelta = totalClicksNow - totalClicksPrev;\nconst deltaPercent = totalClicksPrev > 0 ? ((totalDelta / totalClicksPrev) * 100).toFixed(1) : 0;\n\nconst statsCards = `\n<div style=\"display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; margin-bottom: 32px;\">\n    <div style=\"background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 16px; padding: 24px; \n                box-shadow: 0 8px 32px rgba(102, 126, 234, 0.3);\">\n        <div style=\"color: rgba(255,255,255,0.8); font-size: 12px; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 8px;\">\n            Total Clicks\n        </div>\n        <div style=\"color: #fff; font-size: 32px; font-weight: 700; margin-bottom: 4px;\">\n            ${fmt(totalClicksNow)}\n        </div>\n        <div style=\"color: ${totalDelta >= 0 ? '#4ade80' : '#f87171'}; font-size: 14px; font-weight: 600;\">\n            ${totalDelta >= 0 ? '↗' : '↘'} ${totalDelta >= 0 ? '+' : ''}${fmt(totalDelta)} (${deltaPercent}%)\n        </div>\n    </div>\n    \n    <div style=\"background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%); border-radius: 16px; padding: 24px;\n                box-shadow: 0 8px 32px rgba(240, 147, 251, 0.3);\">\n        <div style=\"color: rgba(255,255,255,0.8); font-size: 12px; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 8px;\">\n            Rising Pages\n        </div>\n        <div style=\"color: #fff; font-size: 32px; font-weight: 700; margin-bottom: 4px;\">\n            ${risers.filter(r => r.delta > 0).length}\n        </div>\n        <div style=\"color: #4ade80; font-size: 14px; font-weight: 600;\">\n            📈 Active Growth\n        </div>\n    </div>\n    \n    <div style=\"background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%); border-radius: 16px; padding: 24px;\n                box-shadow: 0 8px 32px rgba(79, 172, 254, 0.3);\">\n        <div style=\"color: rgba(255,255,255,0.8); font-size: 12px; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 8px;\">\n            Opportunities\n        </div>\n        <div style=\"color: #fff; font-size: 32px; font-weight: 700; margin-bottom: 4px;\">\n            ${opportunities.length}\n        </div>\n        <div style=\"color: #a3e635; font-size: 14px; font-weight: 600;\">\n            🎯 Ready Targets\n        </div>\n    </div>\n</div>`;\n\nlet html = `\n<!DOCTYPE html>\n<html>\n<head>\n    <meta charset=\"UTF-8\">\n    <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">\n</head>\n<body style=\"margin: 0; padding: 0; background: #0a0e27;\">\n    <div style=\"font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; \n                max-width: 900px; margin: 0 auto; background: #0a0e27;\">\n        \n        <div style=\"background: linear-gradient(135deg, #667eea 0%, #764ba2 50%, #f093fb 100%); \n                    padding: 48px 32px; border-radius: 0 0 32px 32px; position: relative; overflow: hidden;\">\n            <div style=\"position: relative; z-index: 2;\">\n                <div style=\"color: rgba(255,255,255,0.9); font-size: 14px; font-weight: 600; \n                           letter-spacing: 2px; text-transform: uppercase; margin-bottom: 12px;\">\n                    Growth Analytics Dashboard\n                </div>\n                <h1 style=\"margin: 0; font-size: 42px; font-weight: 800; color: #fff; \n                           letter-spacing: -1px; margin-bottom: 8px;\">\n                    SEO Performance Report\n                </h1>\n                <p style=\"margin: 0; color: rgba(255,255,255,0.8); font-size: 16px; font-weight: 400;\">\n                    Weekly Growth Analysis • ${new Date().toLocaleDateString('en-US', { day: 'numeric', month: 'long', year: 'numeric' })}\n                </p>\n            </div>\n            <div style=\"position: absolute; width: 300px; height: 300px; border-radius: 50%; \n                        background: rgba(255,255,255,0.1); top: -100px; right: -100px; z-index: 1;\"></div>\n            <div style=\"position: absolute; width: 200px; height: 200px; border-radius: 50%; \n                        background: rgba(255,255,255,0.08); bottom: -50px; left: -50px; z-index: 1;\"></div>\n        </div>\n        \n        <div style=\"padding: 32px 24px;\">\n            \n            ${statsCards}\n            \n            ${createTable(\n                \"Watchlist Pages\", \n                watchlist, \n                [\"Page\", \"This Week\", \"Last Week\", \"Diff\", \"Imp\"], \n                r => `\n                    <td style=\"padding: 16px; color: #fff; font-weight: 600; border-bottom: 1px solid rgba(255,255,255,0.1);\">\n                        ${cleanUrl(r.url)}\n                    </td>\n                    <td style=\"padding: 16px; color: #a3e635; font-weight: 700; font-size: 18px; border-bottom: 1px solid rgba(255,255,255,0.1);\">\n                        ${fmt(r.clicks_now)}\n                    </td>\n                    <td style=\"padding: 16px; color: rgba(255,255,255,0.5); border-bottom: 1px solid rgba(255,255,255,0.1);\">\n                        ${fmt(r.clicks_prev)}\n                    </td>\n                    <td style=\"padding: 16px; color: ${r.delta >= 0 ? '#4ade80' : '#f87171'}; \n                                font-weight: 700; border-bottom: 1px solid rgba(255,255,255,0.1);\">\n                        ${r.delta > 0 ? '+' : ''}${r.delta}\n                    </td>\n                    <td style=\"padding: 16px; color: rgba(255,255,255,0.7); border-bottom: 1px solid rgba(255,255,255,0.1);\">\n                        ${fmt(r.impr_now)}\n                    </td>\n                `,\n                \"⭐\",\n                \"rgba(163, 230, 53, 0.15)\"\n            )}\n            \n            ${createTable(\n                \"Top Risers\", \n                risers, \n                [\"Page\", \"Diff\", \"Total Clicks\"], \n                r => `\n                    <td style=\"padding: 16px; color: rgba(255,255,255,0.9); border-bottom: 1px solid rgba(255,255,255,0.1);\">\n                        ${cleanUrl(r.url)}\n                    </td>\n                    <td style=\"padding: 16px; color: #4ade80; font-weight: 700; font-size: 18px; border-bottom: 1px solid rgba(255,255,255,0.1);\">\n                        +${fmt(r.delta)}\n                    </td>\n                    <td style=\"padding: 16px; color: rgba(255,255,255,0.7); border-bottom: 1px solid rgba(255,255,255,0.1);\">\n                        ${fmt(r.clicks_now)}\n                    </td>\n                `,\n                \"🚀\",\n                \"rgba(74, 222, 128, 0.15)\"\n            )}\n            \n            ${createTable(\n                \"Top Fallers\", \n                fallers, \n                [\"Page\", \"Diff\", \"Total Clicks\"], \n                r => `\n                    <td style=\"padding: 16px; color: rgba(255,255,255,0.9); border-bottom: 1px solid rgba(255,255,255,0.1);\">\n                        ${cleanUrl(r.url)}\n                    </td>\n                    <td style=\"padding: 16px; color: #f87171; font-weight: 700; font-size: 18px; border-bottom: 1px solid rgba(255,255,255,0.1);\">\n                        ${fmt(r.delta)}\n                    </td>\n                    <td style=\"padding: 16px; color: rgba(255,255,255,0.7); border-bottom: 1px solid rgba(255,255,255,0.1);\">\n                        ${fmt(r.clicks_now)}\n                    </td>\n                `,\n                \"📉\",\n                \"rgba(248, 113, 113, 0.15)\"\n            )}\n            \n            ${createTable(\n                \"Content Decay\", \n                decay, \n                [\"Page\", \"Click Loss\", \"Rank Loss\"], \n                r => `\n                    <td style=\"padding: 16px; color: rgba(255,255,255,0.9); border-bottom: 1px solid rgba(255,255,255,0.1);\">\n                        ${cleanUrl(r.url)}\n                    </td>\n                    <td style=\"padding: 16px; color: #fb923c; font-weight: 700; border-bottom: 1px solid rgba(255,255,255,0.1);\">\n                        ${fmt(r.delta)}\n                    </td>\n                    <td style=\"padding: 16px; color: #fbbf24; font-weight: 600; border-bottom: 1px solid rgba(255,255,255,0.1);\">\n                        ${r.pos_delta > 0 ? '-' + r.pos_delta.toFixed(1) : 'Stable'}\n                    </td>\n                `,\n                \"🥀\",\n                \"rgba(251, 146, 60, 0.15)\"\n            )}\n            \n            ${createTable(\n                \"Low Hanging Fruits\", \n                opportunities, \n                [\"Query\", \"Page\", \"Pos\", \"Imp\"], \n                r => `\n                    <td style=\"padding: 16px; color: #fff; font-weight: 600; border-bottom: 1px solid rgba(255,255,255,0.1);\">\n                        ${r.query}\n                    </td>\n                    <td style=\"padding: 16px; color: rgba(255,255,255,0.6); font-size: 12px; border-bottom: 1px solid rgba(255,255,255,0.1);\">\n                        ${cleanUrl(r.page)}\n                    </td>\n                    <td style=\"padding: 16px; color: #a3e635; font-weight: 700; border-bottom: 1px solid rgba(255,255,255,0.1);\">\n                        ${Number(r.pos).toFixed(1)}\n                    </td>\n                    <td style=\"padding: 16px; color: rgba(255,255,255,0.7); border-bottom: 1px solid rgba(255,255,255,0.1);\">\n                        ${r.imp}\n                    </td>\n                `,\n                \"🍏\",\n                \"rgba(163, 230, 53, 0.15)\"\n            )}\n            \n            ${createTable(\n                \"Cannibalization\", \n                cannibalIssues, \n                [\"Query\", \"Competing Pages\", \"Total Imp\"], \n                r => `\n                    <td style=\"padding: 16px; color: #fff; font-weight: 600; border-bottom: 1px solid rgba(255,255,255,0.1);\">\n                        ${r.query}\n                    </td>\n                    <td style=\"padding: 16px; color: rgba(255,255,255,0.6); font-size: 12px; line-height: 1.6; border-bottom: 1px solid rgba(255,255,255,0.1);\">\n                        ${r.pages.map(u => `${cleanUrl(u.page)} <span style=\"color: #fbbf24;\">(Pos: ${u.pos.toFixed(1)})</span>`).join('<br>')}\n                    </td>\n                    <td style=\"padding: 16px; color: #f87171; font-weight: 700; border-bottom: 1px solid rgba(255,255,255,0.1);\">\n                        ${r.totalImp}\n                    </td>\n                `,\n                \"🧟\",\n                \"rgba(139, 92, 246, 0.15)\"\n            )}\n            \n        </div>\n        \n        <div style=\"background: linear-gradient(135deg, rgba(102, 126, 234, 0.1) 0%, rgba(118, 75, 162, 0.1) 100%); \n                    margin: 32px 24px; padding: 24px; border-radius: 16px; text-align: center;\n                    border: 1px solid rgba(255,255,255,0.1);\">\n            <div style=\"color: rgba(255,255,255,0.5); font-size: 12px; margin-bottom: 8px;\">\n                Powered by\n            </div>\n            <div style=\"color: #fff; font-size: 18px; font-weight: 700; letter-spacing: 1px;\">\n                Growth Engine\n            </div>\n        </div>\n        \n    </div>\n</body>\n</html>`;\n\nreturn [{\n    json: {\n        emailBody: html,\n        subject: `🚀 Growth SEO Report - ${new Date().toLocaleDateString('en-US')}`\n    }\n}];"
+      },
+      "id": "0dfb810c-36a2-4826-ab19-0daa2b3916ce",
+      "name": "Generate SEO Report",
+      "type": "n8n-nodes-base.function",
+      "position": [
+        48,
+        -80
+      ],
+      "typeVersion": 1
+    },
+    {
+      "parameters": {
+        "content": "## Weekly Schedule",
+        "height": 272,
+        "width": 216,
+        "color": 6
+      },
+      "id": "a70d4a0f-ec16-4d48-b160-d5c13b9c2393",
+      "name": "📌 Setup Instructions",
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        -1008,
+        -160
+      ],
+      "typeVersion": 1
+    },
+    {
+      "parameters": {
+        "content": "## Scrape The Data",
+        "height": 272,
+        "width": 672,
+        "color": 2
+      },
+      "id": "ca415851-94a6-4fd7-afbf-ad33a6f5ff74",
+      "name": "📌 Google Search Console Config",
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        -768,
+        -160
+      ],
+      "typeVersion": 1
+    },
+    {
+      "parameters": {
+        "content": "## Send The Email",
+        "height": 280,
+        "color": 5
+      },
+      "id": "442f40c8-6d90-4b36-a730-307f7d46414b",
+      "name": "📌 Email Node Setup",
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        272,
+        -160
+      ],
+      "typeVersion": 1
+    },
+    {
+      "parameters": {
+        "sendTo": "admkadirii@gmail.com",
+        "subject": "={{ $json.subject }}",
+        "message": "={{ $json.emailBody }}",
+        "options": {}
+      },
+      "id": "c56bf531-99fe-427a-84d3-1d758a38df40",
+      "name": "Send Weekly Report by Email",
+      "type": "n8n-nodes-base.gmail",
+      "position": [
+        352,
+        -80
+      ],
+      "webhookId": "ed917a54-4f8a-4db9-9a8d-890e3a270dd4",
+      "typeVersion": 2.1,
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "frfcNlOSdoNEBF7F",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://www.googleapis.com/webmasters/v3/sites/sc-domain:example.com/searchAnalytics/query",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleSearchConsoleOAuth2Api",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"startDate\": \"{{ $today.minus({days: 7}).toFormat('yyyy-MM-dd') }}\",\n  \"endDate\": \"{{ $today.minus({days: 1}).toFormat('yyyy-MM-dd') }}\",\n  \"dimensions\": [\"page\"],\n  \"rowLimit\": 5000\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        -704,
+        -80
+      ],
+      "id": "3e86e356-e6a4-4c1a-a5f1-8b72002b2850",
+      "name": "GSC Page Data - Current",
+      "credentials": {
+        "googleSearchConsoleOAuth2Api": {
+          "id": "MDySpzUaBcv1MfyL",
+          "name": "Google Search Console account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://www.googleapis.com/webmasters/v3/sites/sc-domain:example.com/searchAnalytics/query",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleSearchConsoleOAuth2Api",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"startDate\": \"{{ $today.minus({days: 14}).toFormat('yyyy-MM-dd') }}\",\n  \"endDate\": \"{{ $today.minus({days: 8}).toFormat('yyyy-MM-dd') }}\",\n  \"dimensions\": [\"page\"],\n  \"rowLimit\": 5000\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        -496,
+        -80
+      ],
+      "id": "df5fd091-e9ad-469c-b3bd-4e84e03a380d",
+      "name": "GSC Page Data - Previous",
+      "credentials": {
+        "googleSearchConsoleOAuth2Api": {
+          "id": "MDySpzUaBcv1MfyL",
+          "name": "Google Search Console account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://www.googleapis.com/webmasters/v3/sites/sc-domain:example.com/searchAnalytics/query",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleSearchConsoleOAuth2Api",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"startDate\": \"{{ $today.minus({days: 7}).toFormat('yyyy-MM-dd') }}\",\n  \"endDate\": \"{{ $today.minus({days: 1}).toFormat('yyyy-MM-dd') }}\",\n  \"dimensions\": [\"page\", \"query\"],\n  \"rowLimit\": 5000\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        -288,
+        -80
+      ],
+      "id": "bb60640c-5122-447b-9eba-96798180f613",
+      "name": "GSC Query Data",
+      "credentials": {
+        "googleSearchConsoleOAuth2Api": {
+          "id": "MDySpzUaBcv1MfyL",
+          "name": "Google Search Console account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "content": "## Generate The Report",
+        "height": 272,
+        "width": 304
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        -64,
+        -160
+      ],
+      "typeVersion": 1,
+      "id": "9bf94b5b-de7d-458d-897e-3a0009b7608f",
+      "name": "Sticky Note"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Generate SEO Report": {
+      "main": [
+        [
+          {
+            "node": "Send Weekly Report by Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Weekly Trigger (Monday 7AM)": {
+      "main": [
+        [
+          {
+            "node": "GSC Page Data - Current",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "GSC Page Data - Current": {
+      "main": [
+        [
+          {
+            "node": "GSC Page Data - Previous",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "GSC Page Data - Previous": {
+      "main": [
+        [
+          {
+            "node": "GSC Query Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "GSC Query Data": {
+      "main": [
+        [
+          {
+            "node": "Generate SEO Report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "availableInMCP": false
+  },
+  "versionId": "070df167-8cec-4951-aefb-789ff7f1ad4c",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "a3b2d8960070b15b13533e1add4a2ff2ee81c75e6c746f5e9af17ab41fe560b6"
+  },
+  "id": "25KYLq65y6V3BlYs",
+  "tags": []
+}
