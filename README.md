@@ -2,7 +2,6 @@
 
 <p align="center">
     <img src="https://raw.githubusercontent.com/n8n-io/n8n/master/assets/n8n-logo.png" alt="n8n Logo" width="110" style="vertical-align: middle;"/>
-    <span style="margin: 0 15px; font-size: 24px; color: #666;">+</span>
 </p>
 
 Hi everyone.
