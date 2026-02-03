@@ -3,7 +3,6 @@
 <p align="center">
     <img src="https://raw.githubusercontent.com/n8n-io/n8n/master/assets/n8n-logo.png" alt="n8n Logo" width="110" style="vertical-align: middle;"/>
     <span style="margin: 0 15px; font-size: 24px; color: #666;">+</span>
-    <img src="https://upload.wikimedia.org/wikipedia/commons/c/c7/Google_Search_Console_logo_%282016%29.svg" alt="Google Search Console Logo" width="100" style="vertical-align: middle;"/>
 </p>
 
 Hi everyone.
@@ -24,9 +23,6 @@ The logic is simple but effective. Instead of making one API call, we make three
 
 The result is a weekly HTML email report that shows exactly what is happening with your SEO performance, down to the last click.
 
-### Report Example
-
-Here is a look at the final output delivered via email. It features a modern, dark-mode design emphasizing growth metrics.
 
 ![Weekly GSC Report Output](weekly_gsc_reports_image.png)
 
