@@ -74,7 +74,7 @@
     },
     {
       "parameters": {
-        "sendTo": "admkadirii@gmail.com",
+        "sendTo": "example@gmail.com",
         "subject": "={{ $json.subject }}",
         "message": "={{ $json.emailBody }}",
         "options": {}
@@ -90,8 +90,8 @@
       "typeVersion": 2.1,
       "credentials": {
         "gmailOAuth2": {
-          "id": "frfcNlOSdoNEBF7F",
-          "name": "Gmail account"
+          "id": "IZScv0ZzGpU5ys9y",
+          "name": "Gmail account 2"
         }
       }
     },
@@ -116,8 +116,8 @@
       "name": "GSC Page Data - Current",
       "credentials": {
         "googleSearchConsoleOAuth2Api": {
-          "id": "MDySpzUaBcv1MfyL",
-          "name": "Google Search Console account"
+          "id": "tQlwxpmGGgYViqdT",
+          "name": "Google Search Console account 2"
         }
       }
     },
@@ -142,8 +142,8 @@
       "name": "GSC Page Data - Previous",
       "credentials": {
         "googleSearchConsoleOAuth2Api": {
-          "id": "MDySpzUaBcv1MfyL",
-          "name": "Google Search Console account"
+          "id": "tQlwxpmGGgYViqdT",
+          "name": "Google Search Console account 2"
         }
       }
     },
@@ -168,8 +168,8 @@
       "name": "GSC Query Data",
       "credentials": {
         "googleSearchConsoleOAuth2Api": {
-          "id": "MDySpzUaBcv1MfyL",
-          "name": "Google Search Console account"
+          "id": "tQlwxpmGGgYViqdT",
+          "name": "Google Search Console account 2"
         }
       }
     },
@@ -252,7 +252,7 @@
     "executionOrder": "v1",
     "availableInMCP": false
   },
-  "versionId": "070df167-8cec-4951-aefb-789ff7f1ad4c",
+  "versionId": "31ad14c9-2411-4c64-a0e4-e9a4b52f268c",
   "meta": {
     "templateCredsSetupCompleted": true,
     "instanceId": "a3b2d8960070b15b13533e1add4a2ff2ee81c75e6c746f5e9af17ab41fe560b6"
